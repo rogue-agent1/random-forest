@@ -1,47 +1,56 @@
 #!/usr/bin/env python3
-"""random_forest - Simple random forest classifier."""
-import sys,math,random
+"""Random Forest classifier — zero-dep implementation."""
+import random, math
 from collections import Counter
-def gini(groups,classes):
-    total=sum(len(g) for g in groups);score=0
-    for g in groups:
-        if not g:continue
-        s=len(g);counts=Counter(row[-1] for row in g)
-        score+=sum((c/s)**2 for c in counts.values())*s/total
-    return 1-score
-def split(data,idx,val):
-    left=[r for r in data if r[idx]<val];right=[r for r in data if r[idx]>=val]
-    return left,right
-def best_split(data,n_features):
-    features=random.sample(range(len(data[0])-1),min(n_features,len(data[0])-1))
-    best={"score":1};
+
+def gini(y):
+    c=Counter(y); n=len(y)
+    return 1-sum((v/n)**2 for v in c.values()) if n else 0
+
+def best_split(X, y, features):
+    best_g=float('inf'); best_f=None; best_v=None
     for f in features:
-        for row in data:
-            l,r=split(data,f,row[f]);g=gini([l,r],set(row[-1] for row in data))
-            if g<best["score"]:best={"idx":f,"val":row[f],"score":g,"left":l,"right":r}
-    return best
-def build_tree(data,max_depth,min_size,n_features,depth=0):
-    if depth>=max_depth or len(data)<=min_size:return Counter(r[-1] for r in data).most_common(1)[0][0]
-    node=best_split(data,n_features)
-    if not node.get("left") or not node.get("right"):return Counter(r[-1] for r in data).most_common(1)[0][0]
-    node["left"]=build_tree(node["left"],max_depth,min_size,n_features,depth+1)
-    node["right"]=build_tree(node["right"],max_depth,min_size,n_features,depth+1)
-    return node
-def predict_tree(node,row):
-    if not isinstance(node,dict):return node
-    return predict_tree(node["left"] if row[node["idx"]]<node["val"] else node["right"],row)
-def random_forest(data,n_trees=10,max_depth=5,sample_ratio=0.8):
-    n=len(data);n_features=int(math.sqrt(len(data[0])-1))+1;trees=[]
-    for _ in range(n_trees):
-        sample=[data[random.randint(0,n-1)] for _ in range(int(n*sample_ratio))]
-        trees.append(build_tree(sample,max_depth,2,n_features))
-    return trees
-def predict_rf(trees,row):
-    votes=[predict_tree(t,row) for t in trees];return Counter(votes).most_common(1)[0][0]
+        vals=sorted(set(r[f] for r in X))
+        for i in range(len(vals)-1):
+            v=(vals[i]+vals[i+1])/2
+            left=[yi for xi,yi in zip(X,y) if xi[f]<=v]
+            right=[yi for xi,yi in zip(X,y) if xi[f]>v]
+            if not left or not right: continue
+            g=(len(left)*gini(left)+len(right)*gini(right))/len(y)
+            if g<best_g: best_g=g; best_f=f; best_v=v
+    return best_f, best_v
+
+def build_tree(X, y, max_depth=10, max_features=None, depth=0):
+    if depth>=max_depth or len(set(y))<=1: return Counter(y).most_common(1)[0][0]
+    d=len(X[0]); feats=random.sample(range(d),min(max_features or int(math.sqrt(d)),d))
+    f,v=best_split(X,y,feats)
+    if f is None: return Counter(y).most_common(1)[0][0]
+    li=[(xi,yi) for xi,yi in zip(X,y) if xi[f]<=v]
+    ri=[(xi,yi) for xi,yi in zip(X,y) if xi[f]>v]
+    if not li or not ri: return Counter(y).most_common(1)[0][0]
+    return {"f":f,"v":v,
+            "l":build_tree([x for x,_ in li],[y for _,y in li],max_depth,max_features,depth+1),
+            "r":build_tree([x for x,_ in ri],[y for _,y in ri],max_depth,max_features,depth+1)}
+
+def predict_tree(tree, x):
+    if not isinstance(tree,dict): return tree
+    return predict_tree(tree["l"] if x[tree["f"]]<=tree["v"] else tree["r"], x)
+
+class RandomForest:
+    def __init__(self, n_trees=10, max_depth=10):
+        self.n_trees=n_trees; self.max_depth=max_depth; self.trees=[]
+    def fit(self, X, y):
+        n=len(X)
+        for _ in range(self.n_trees):
+            idx=[random.randint(0,n-1) for _ in range(n)]
+            self.trees.append(build_tree([X[i] for i in idx],[y[i] for i in idx],self.max_depth))
+    def predict(self, X):
+        return [Counter(predict_tree(t,x) for t in self.trees).most_common(1)[0][0] for x in X]
+
 if __name__=="__main__":
-    random.seed(42);data=[]
-    for _ in range(50):data.append([random.gauss(-1,1),random.gauss(-1,1),0])
-    for _ in range(50):data.append([random.gauss(1,1),random.gauss(1,1),1])
-    trees=random_forest(data)
-    correct=sum(1 for r in data if predict_rf(trees,r)==r[-1])
-    print(f"Trees: {len(trees)}, Accuracy: {correct/len(data):.1%}")
+    random.seed(42)
+    X=[[random.gauss(0,1),random.gauss(0,1)] for _ in range(50)]+[[random.gauss(2,1),random.gauss(2,1)] for _ in range(50)]
+    y=[0]*50+[1]*50
+    rf=RandomForest(n_trees=20,max_depth=5); rf.fit(X,y)
+    acc=sum(p==a for p,a in zip(rf.predict(X),y))/len(y)
+    print(f"Random Forest accuracy: {acc:.0%} ({rf.n_trees} trees)")
