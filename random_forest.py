@@ -1,56 +1,51 @@
 #!/usr/bin/env python3
-"""Random Forest classifier — zero-dep implementation."""
-import random, math
+"""random_forest - Ensemble classifier."""
+import sys,argparse,json,math,random
 from collections import Counter
-
-def gini(y):
-    c=Counter(y); n=len(y)
-    return 1-sum((v/n)**2 for v in c.values()) if n else 0
-
-def best_split(X, y, features):
-    best_g=float('inf'); best_f=None; best_v=None
-    for f in features:
-        vals=sorted(set(r[f] for r in X))
-        for i in range(len(vals)-1):
-            v=(vals[i]+vals[i+1])/2
-            left=[yi for xi,yi in zip(X,y) if xi[f]<=v]
-            right=[yi for xi,yi in zip(X,y) if xi[f]>v]
-            if not left or not right: continue
-            g=(len(left)*gini(left)+len(right)*gini(right))/len(y)
-            if g<best_g: best_g=g; best_f=f; best_v=v
-    return best_f, best_v
-
-def build_tree(X, y, max_depth=10, max_features=None, depth=0):
-    if depth>=max_depth or len(set(y))<=1: return Counter(y).most_common(1)[0][0]
-    d=len(X[0]); feats=random.sample(range(d),min(max_features or int(math.sqrt(d)),d))
-    f,v=best_split(X,y,feats)
-    if f is None: return Counter(y).most_common(1)[0][0]
-    li=[(xi,yi) for xi,yi in zip(X,y) if xi[f]<=v]
-    ri=[(xi,yi) for xi,yi in zip(X,y) if xi[f]>v]
-    if not li or not ri: return Counter(y).most_common(1)[0][0]
-    return {"f":f,"v":v,
-            "l":build_tree([x for x,_ in li],[y for _,y in li],max_depth,max_features,depth+1),
-            "r":build_tree([x for x,_ in ri],[y for _,y in ri],max_depth,max_features,depth+1)}
-
-def predict_tree(tree, x):
-    if not isinstance(tree,dict): return tree
-    return predict_tree(tree["l"] if x[tree["f"]]<=tree["v"] else tree["r"], x)
-
-class RandomForest:
-    def __init__(self, n_trees=10, max_depth=10):
-        self.n_trees=n_trees; self.max_depth=max_depth; self.trees=[]
-    def fit(self, X, y):
-        n=len(X)
-        for _ in range(self.n_trees):
-            idx=[random.randint(0,n-1) for _ in range(n)]
-            self.trees.append(build_tree([X[i] for i in idx],[y[i] for i in idx],self.max_depth))
-    def predict(self, X):
-        return [Counter(predict_tree(t,x) for t in self.trees).most_common(1)[0][0] for x in X]
-
-if __name__=="__main__":
+def entropy(labels):
+    n=len(labels);freq=Counter(labels)
+    return -sum((c/n)*math.log2(c/n) for c in freq.values() if c>0)
+def build_tree(X,y,max_depth=3,n_features=None,depth=0):
+    if depth>=max_depth or len(set(y))<=1:return Counter(y).most_common(1)[0][0]
+    d=len(X[0]);feats=random.sample(range(d),min(n_features or int(math.sqrt(d)),d))
+    best_gain=-1;best_f=0;best_v=0
+    base=entropy(y)
+    for f in feats:
+        vals=sorted(set(x[f] for x in X))
+        for v in vals:
+            l=[yi for xi,yi in zip(X,y) if xi[f]<=v];r=[yi for xi,yi in zip(X,y) if xi[f]>v]
+            if not l or not r:continue
+            g=base-(len(l)/len(y)*entropy(l)+len(r)/len(y)*entropy(r))
+            if g>best_gain:best_gain=g;best_f=f;best_v=v
+    if best_gain<=0:return Counter(y).most_common(1)[0][0]
+    lX,ly,rX,ry=[],[],[],[]
+    for xi,yi in zip(X,y):
+        if xi[best_f]<=best_v:lX.append(xi);ly.append(yi)
+        else:rX.append(xi);ry.append(yi)
+    return {"f":best_f,"v":best_v,"l":build_tree(lX,ly,max_depth,n_features,depth+1),"r":build_tree(rX,ry,max_depth,n_features,depth+1)}
+def predict_tree(tree,x):
+    if not isinstance(tree,dict):return tree
+    return predict_tree(tree["l"] if x[tree["f"]]<=tree["v"] else tree["r"],x)
+def main():
+    p=argparse.ArgumentParser(description="Random forest")
+    p.add_argument("--trees",type=int,default=10);p.add_argument("--depth",type=int,default=4)
+    p.add_argument("--samples",type=int,default=200)
+    args=p.parse_args()
     random.seed(42)
-    X=[[random.gauss(0,1),random.gauss(0,1)] for _ in range(50)]+[[random.gauss(2,1),random.gauss(2,1)] for _ in range(50)]
-    y=[0]*50+[1]*50
-    rf=RandomForest(n_trees=20,max_depth=5); rf.fit(X,y)
-    acc=sum(p==a for p,a in zip(rf.predict(X),y))/len(y)
-    print(f"Random Forest accuracy: {acc:.0%} ({rf.n_trees} trees)")
+    X=[];y=[]
+    for _ in range(args.samples//3):
+        X.append([random.gauss(1,1),random.gauss(1,1)]);y.append("A")
+        X.append([random.gauss(4,1),random.gauss(1,1)]);y.append("B")
+        X.append([random.gauss(2.5,1),random.gauss(4,1)]);y.append("C")
+    split=int(len(X)*0.8)
+    forest=[]
+    for _ in range(args.trees):
+        idx=[random.randint(0,split-1) for _ in range(split)]
+        bX=[X[i] for i in idx];by=[y[i] for i in idx]
+        forest.append(build_tree(bX,by,args.depth))
+    correct=0
+    for xi,yi in zip(X[split:],y[split:]):
+        votes=Counter(predict_tree(t,xi) for t in forest)
+        if votes.most_common(1)[0][0]==yi:correct+=1
+    print(json.dumps({"trees":args.trees,"max_depth":args.depth,"accuracy":round(correct/len(X[split:]),4),"test_size":len(X)-split},indent=2))
+if __name__=="__main__":main()
