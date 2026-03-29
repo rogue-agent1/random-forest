@@ -1,9 +1,10 @@
 # random-forest
 
-Random forest ensemble classifier. Single-file Python CLI, zero dependencies.
+Single-file Python CLI. Zero dependencies.
 
 ## Usage
 
 ```bash
 python3 random_forest.py
+python3 random_forest.py test
 ```
