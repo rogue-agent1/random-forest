@@ -1,6 +1,6 @@
-# random-forest
+# Random Forest Classifier
 
-Random forest ensemble classifier
+Random Forest Classifier — zero-dependency, single-file Python CLI.
 
 ## Usage
 
@@ -8,7 +8,6 @@ Random forest ensemble classifier
 python3 random_forest.py --help
 ```
 
-## Features
+## License
 
-- Zero dependencies (Python 3.8+)
-- Single file implementation
+MIT
