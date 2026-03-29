@@ -1,13 +1,9 @@
-# Random Forest Classifier
+# random-forest
 
-Random Forest Classifier — zero-dependency, single-file Python CLI.
+Random forest ensemble classifier. Single-file Python CLI, zero dependencies.
 
 ## Usage
 
 ```bash
-python3 random_forest.py --help
+python3 random_forest.py
 ```
-
-## License
-
-MIT
